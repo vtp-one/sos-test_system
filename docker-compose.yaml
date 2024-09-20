@@ -1,0 +1,82 @@
+services:
+  # DEFAULT PROFILE
+  backend:
+    image: ${SYSTEM_NAME}/backend:${SYSTEM_VERSION}
+    pull_policy: never
+    hostname: test_system-backend
+
+    profiles:
+      - default
+
+    ports:
+      - 42000:42000
+
+    environment:
+      - BACKEND_HOST=${SERVICE_HOST}
+      - BACKEND_PORT=42000
+      - PYTHONDONTWRITEBYTECODE=1
+      - DEBUG_NAME=${DEBUG_NAME}
+
+    stop_signal: SIGKILL
+
+  frontend:
+    image: ${SYSTEM_NAME}/frontend:${SYSTEM_VERSION}
+    pull_policy: never
+    hostname: test_system-frontend
+
+    profiles:
+      - default
+
+    ports:
+      - ${SERVICE_PORT}:42042
+
+    environment:
+      - BACKEND_HOST=test_system-backend
+      - BACKEND_PORT=42000
+      - PYTHONDONTWRITEBYTECODE=1
+
+    stop_signal: SIGKILL
+
+  # DEV PROFILE
+  backend-dev:
+    image: ${SYSTEM_NAME}/backend:${SYSTEM_VERSION}
+    pull_policy: never
+    hostname: test_system-backend
+
+    profiles:
+      - dev
+
+    ports:
+      - 42000:42000
+
+    environment:
+      - BACKEND_HOST=${SERVICE_HOST}
+      - BACKEND_PORT=42000
+      - PYTHONDONTWRITEBYTECODE=1
+      - DEBUG_NAME=${DEBUG_NAME}
+
+    volumes:
+      - ${BACKEND_WORKING_DIR}/server:/opt/app/server/
+
+    stop_signal: SIGKILL
+
+  frontend-dev:
+    image: ${SYSTEM_NAME}/frontend:${SYSTEM_VERSION}
+    pull_policy: never
+    hostname: test_system-frontend
+
+    profiles:
+      - dev
+
+    ports:
+      - ${SERVICE_PORT}:42042
+
+    environment:
+      - BACKEND_HOST=test_system-backend
+      - BACKEND_PORT=42000
+      - PYTHONDONTWRITEBYTECODE=1
+
+    volumes:
+      - ${FRONTEND_WORKING_DIR}/server:/opt/app/server/
+
+    stop_signal: SIGKILL

@@ -1,0 +1,503 @@
+meta:
+  sos_version: v0.0.1
+  system_name: sos-test_system
+  system_version: v0.0.1
+  system_internal: internal
+  system_description: A system for testing SOS-Toolkit.
+  profile: default
+
+namespace:
+  git_root: https://github.com
+  branch_target: v0.0.1
+  org_target: vtp-one
+
+  debug_name: Test System
+  compose_file: docker-compose.yaml
+  service_host: 0.0.0.0
+  service_port: "42222"
+
+  builder:
+    git_target: ${namespace.org_target}/sos-test_system-builder
+    branch_target: ${namespace.branch_target}
+    working_dir: null
+    exists:
+      label: builder working dir exists
+      ctx_key: namespace.builder.working_dir
+      valid: null
+      is_inverse: True
+      raise_exc: False
+
+  backend:
+    git_target: ${namespace.org_target}/sos-test_system-backend
+    branch_target: ${namespace.branch_target}
+    working_dir: null
+    exists:
+      label: frontend working dir exists
+      ctx_key: namespace.frontend.working_dir
+      valid: null
+      is_inverse: True
+      raise_exc: False
+
+  frontend:
+    git_target: ${namespace.org_target}/sos-test_system-frontend
+    branch_target: ${namespace.branch_target}
+    working_dir: null
+    exists:
+      label: backend working dir exists
+      ctx_key: namespace.backend.working_dir
+      valid: null
+      is_inverse: True
+      raise_exc: False
+
+service:
+  dev_mode: True
+
+  local_data: True
+
+action:
+  sos_help:
+    label: print help
+    tool: terminal.print_object
+    params:
+      horizontal_rule: True
+      obj:
+        - SOS-Test_System: ${meta.system_description}
+        - Install:
+          - sos-toolkit setup
+          - sos-toolkit install
+        - Dev:
+          - sos-toolkit setup
+          - sos-toolkit dev
+          - sos-toolkit build
+        - Run:
+          - sos-toolkit up
+        - Stop:
+          - sos-toolkit down
+        - Config:
+          - sos-toolkit config
+
+  sos_setup:
+    local_data: ${service.local_data.action.setup}
+
+  sos_config:
+    default:
+      tool: terminal.input_prompt
+      params:
+        prompt: "Input Debug System Name: "
+      result_map:
+        - label: set debug_name
+          result: namespace.debug_name
+          data: input
+
+  sos_dev:
+    dev_enable: ${service.dev_mode.action.enable}
+
+    builder:
+      label: builder git clone
+      tool: git.repo_clone
+      context_map:
+        - label: get builder remote target
+          result: remote_target
+          data:
+            - source: namespace.git_root
+              target: root
+            - source: namespace.builder.git_target
+              target: target
+          format_string: "{root}/{target}.git"
+        - label: get builder branch
+          result: remote_branch
+          data: namespace.builder.branch_target
+        - label: get local target
+          result: local_target
+          data:
+            - source: meta.system_internal
+              target: root
+            - source: null
+              target: local
+              default: builder
+          path_join: True
+      result_map:
+        - label: set output working dir
+          result: namespace.builder.working_dir
+          data: working_dir
+
+    backend:
+      label: bakend git clone
+      tool: git.repo_clone
+      context_map:
+        - label: generate backend remote target
+          result: remote_target
+          data:
+            - source: namespace.git_root
+              target: root
+            - source: namespace.backend.git_target
+              target: target
+          format_string: "{root}/{target}.git"
+        - label: get backend branch
+          result: remote_branch
+          data: namespace.backend.branch_target
+        - label: get local target
+          result: local_target
+          data:
+            - source: meta.system_internal
+              target: root
+            - source: null
+              target: local
+              default: backend
+          path_join: True
+      result_map:
+        - label: set output working dir
+          result: namespace.backend.working_dir
+          data: working_dir
+
+    frontend:
+      label: frontend git clone
+      tool: git.repo_clone
+      context_map:
+        - label: get frontend remote target
+          result: remote_target
+          data:
+            - source: namespace.git_root
+              target: root
+            - source: namespace.frontend.git_target
+              target: target
+          format_string: "{root}/{target}.git"
+        - label: get frontend branch
+          result: remote_branch
+          data: namespace.frontend.branch_target
+        - label: get local target
+          result: local_target
+          data:
+            - source: meta.system_internal
+              target: root
+            - source: null
+              target: local
+              default: frontend
+          path_join: True
+      result_map:
+        - label: set output working dir
+          result: namespace.frontend.working_dir
+          data: working_dir
+
+  sos_build:
+    dev_mode: ${service.dev_mode.action.is_enabled}
+
+    namespace_working_dir_exists:
+      tool: context.ctx_flag
+      params:
+        raise_exc: True
+        condition:
+          - ${namespace.builder.exists}
+          - ${namespace.frontend.exists}
+          - ${namespace.backend.exists}
+
+    working_dir_exists:
+      tool: filesystem.path_exists
+      params:
+        raise_exc: True
+      context_map:
+        - label: get working dir targets
+          result: target
+          to_list: True
+          data:
+            - source: namespace.builder.working_dir
+            - source: namespace.frontend.working_dir
+            - source: namespace.backend.working_dir
+
+    backend_buildx:
+      tool: docker.buildx_bake
+      params:
+        bake_file: bakefile.hcl
+        bake_target: default
+      context_map:
+        - label: get builder working directory
+          result: context_dir
+          data: namespace.builder.working_dir
+        - label: get docker namespace
+          result: namespace
+          data: meta.system_name
+        - label: generate build variables
+          result: variables
+          data:
+            - label: get backend working dir
+              result: BACKEND_WORKING_DIR
+              data: namespace.backend.working_dir
+            - label: get frontend working dir
+              result: FRONTEND_WORKING_DIR
+              data: namespace.frontend.working_dir
+
+
+  sos_install:
+    pull:
+      builder: ${action.sos_dev.builder}
+      backend: ${action.sos_dev.backend}
+      frontend: ${action.sos_dev.frontend}
+
+    build:
+      namespace_working_dir_exists: ${action.sos_build.namespace_working_dir_exists}
+      working_dir_exists: ${action.sos_build.working_dir_exists}
+      backend_buildx: ${action.sos_build.backend_buildx}
+
+  sos_up:
+    compose:
+      tool: docker.compose_up
+      context_map:
+        - label: get profile
+          result: profile
+          data: meta.profile
+        - label: generate compose file target
+          result: file
+          data:
+            - source: meta.system_path
+              target: system_path
+            - source: namespace.compose_file
+              target: compose_file
+          path_join: True
+        - label: get project name
+          result: project_name
+          data: meta.system_name
+        - label: generate env_map
+          result: env_map
+          data:
+            - target: SYSTEM_NAME
+              source: meta.system_name
+            - target: SYSTEM_VERSION
+              source: meta.system_version
+            - target: SERVICE_HOST
+              source: namespace.service_host
+            - target: SERVICE_PORT
+              source: namespace.service_port
+            - target: DEBUG_NAME
+              source: namespace.debug_name
+            - target: BACKEND_WORKING_DIR
+              source: namespace.backend.working_dir
+              default: /tmp
+            - target: FRONTEND_WORKING_DIR
+              source: namespace.frontend.working_dir
+              default: /tmp
+
+    service_address:
+      tool: terminal.print_object
+      params:
+        horizontal_rule: True
+      context_map:
+        - label: generate service address
+          result: obj
+          data:
+            - source: null
+              target: preamble
+              default: "SERVER RUNNING ON:"
+            - source: namespace.service_host
+              target: service_host
+            - source: namespace.service_port
+              target: service_port
+          format_string: "{preamble} http://{service_host}:{service_port}"
+
+  sos_down:
+    compose:
+      tool: docker.compose_down
+      context_map:
+        - label: get project name
+          result: project_name
+          data: meta.system_name
+
+  sos_status:
+    root:
+      label: root git status
+      tool: git.repo_status
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: meta.system_path
+
+    builder:
+      label: builder git status
+      tool: git.repo_status
+      condition:
+        - ${service.dev_mode.namespace.condition}
+        - ${namespace.builder.exists}
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: namespace.builder.working_dir
+
+    backend:
+      label: backend git status
+      tool: git.repo_status
+      condition:
+        - ${service.dev_mode.namespace.condition}
+        - ${namespace.backend.exists}
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: namespace.backend.working_dir
+
+    frontend:
+      label: frontend git status
+      tool: git.repo_status
+      condition:
+        - ${service.dev_mode.namespace.condition}
+        - ${namespace.frontend.exists}
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: namespace.frontend.working_dir
+
+  sos_commit:
+    root:
+      label: root git commit
+      tool: git.repo_commit
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: meta.system_path
+
+    builder:
+      label: builder git commit
+      tool: git.repo_commit
+      condition:
+        - ${namespace.builder.exists}
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: namespace.builder.working_dir
+
+    backend:
+      label: backend git commit
+      tool: git.repo_commit
+      condition:
+        - ${namespace.backend.exists}
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: namespace.backend.working_dir
+
+    frontend:
+      label: frontend git commit
+      tool: git.repo_commit
+      condition:
+        - ${namespace.frontend.exists}
+      context_map:
+        - label: get working_dir
+          result: working_dir
+          data: namespace.frontend.working_dir
+
+    default:
+      dev_mode: ${service.dev_mode.action.is_enabled_exc}
+      root: ${action.sos_commit.root}
+      builder: ${action.sos_commit.builder}
+      backend: ${action.sos_commit.backend}
+      frontend: ${action.sos_commit.frontend}
+
+  sos_clean:
+    system_down: ${action.sos_down}
+
+    frontend_image:
+      image_exists:
+        label: check image exists
+        tool: docker.image_exists
+        context_map:
+          - label: get frontend image tag
+            result: target
+            data:
+              - source: meta.system_name
+                target: namespace
+              - source: meta.system_version
+                target: version
+            format_string: "{namespace}/frontend:{version}"
+        result_map:
+          - label: result to __TARGET__
+            result: __TARGET__
+            data: result
+      delete_image:
+        label: delete image if exists
+        tool: docker.image_delete
+        context_map:
+          - label: get frontend image tag
+            result: target
+            data:
+              - source: meta.system_name
+                target: namespace
+              - source: meta.system_version
+                target: version
+            format_string: "{namespace}/frontend:{version}"
+        condition:
+          - label: if image exists
+            ctx_key: __TARGET__
+            valid: True
+            is_inverse: False
+            raise_exc: False
+
+    backend_image:
+      image_exists:
+        label: check image exists
+        tool: docker.image_exists
+        context_map:
+          - label: get backend image tag
+            result: target
+            data:
+              - source: meta.system_name
+                target: namespace
+              - source: meta.system_version
+                target: version
+            format_string: "{namespace}/backend:{version}"
+        result_map:
+          - label: result to __TARGET__
+            result: __TARGET__
+            data: result
+      delete_image:
+        label: delete image if exists
+        tool: docker.image_delete
+        context_map:
+          - label: get backend image tag
+            result: target
+            data:
+              - source: meta.system_name
+                target: namespace
+              - source: meta.system_version
+                target: version
+            format_string: "{namespace}/backend:{version}"
+        condition:
+          - label: if image exists
+            ctx_key: __TARGET__
+            valid: True
+            is_inverse: False
+            raise_exc: False
+
+    frontend_dir:
+      label: delete frontend dir
+      tool: filesystem.directory_delete
+      params:
+        ignore_errors: True
+      condition:
+        - ${namespace.frontend.exists}
+      context_map:
+        - label: get frontend working directory
+          result: target
+          data: namespace.frontend.working_dir
+
+    backend_dir:
+      label: delete backend dir
+      tool: filesystem.directory_delete
+      params:
+        ignore_errors: True
+      condition:
+        - ${namespace.backend.exists}
+      context_map:
+        - label: get backend working directory
+          result: target
+          data: namespace.backend.working_dir
+
+    builder_dir:
+      label: delete builder dir
+      tool: filesystem.directory_delete
+      params:
+        ignore_errors: True
+      condition:
+        - ${namespace.builder.exists}
+      context_map:
+        - label: get builder working directory
+          result: target
+          data: namespace.builder.working_dir
+
+    local_data: ${service.local_data.action.clean}
